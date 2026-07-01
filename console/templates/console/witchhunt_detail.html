@@ -1,0 +1,53 @@
+{% extends "console/base.html" %}
+{% load humanize %}
+{% block title %} · call {{ e.id }}{% endblock %}
+{% block content %}
+
+<p><a href="{% url 'console:witchhunt' %}">&larr; witchhunt</a></p>
+<h2 style="margin-top:.5rem">
+  Call #{{ e.id }} —
+  {% if e.allowed %}<span class="pill active">allow</span>{% else %}<span class="pill revoked">deny</span>{% endif %}
+  {% if e.status == 'ok' %}<span class="dot ok"></span>ok{% else %}<span class="pill pending">{{ e.status }}</span>{% endif %}
+</h2>
+
+<table style="margin-bottom:1.2rem">
+  <tr><th style="width:12rem">When (UTC)</th><td><code>{{ e.occurred_at|date:'Y-m-d H:i:s.u' }}</code> <span class="muted">· {{ e.occurred_at|naturaltime }}</span></td></tr>
+  <tr><th>Principal</th><td>{{ e.principal_upn|default:"—" }} {% if e.principal_oid %}<span class="muted">· oid <code>{{ e.principal_oid }}</code></span>{% endif %}</td></tr>
+  <tr><th>Agent</th><td>{% if e.principal_app %}{{ agent_disp }} <span class="muted">· app <code>{{ e.principal_app }}</code></span> <a href="{% url 'console:agents' %}" style="font-size:.78rem">rename</a>{% else %}<span class="muted">— (no app claim on the token)</span>{% endif %}</td></tr>
+  <tr><th>Tenant</th><td><code>{{ e.tenant.slug }}</code></td></tr>
+  <tr><th>Verb</th><td><code>{{ e.verb }}</code></td></tr>
+  <tr><th>Target</th><td>{% if node %}{{ node.bound_name|default:node.requested_name }}{% if node.description %} <span class="muted">· {{ node.description }}</span>{% endif %} <span class="muted">· asked: {{ e.target|default:"—" }}</span>{% else %}{{ e.target|default:"—" }}{% endif %}<br><span class="muted" style="font-size:.78rem"><code>{{ e.target_svid|default:"(unresolved)" }}</code></span></td></tr>
+  <tr><th>Decision</th><td>{% if e.allowed %}allowed{% else %}<strong>denied</strong>{% endif %}{% if e.reason %} · {{ e.reason }}{% endif %}</td></tr>
+  <tr><th>Result</th><td>
+    {% if e.http_status %}HTTP {{ e.http_status }}{% endif %}
+    {% if e.rc is not None %} · exit <code>{{ e.rc }}</code>{% endif %}
+    {% if e.duration_ms %} · {{ e.duration_ms }} ms{% endif %}
+    {% if not e.http_status and e.rc is None and not e.duration_ms %}—{% endif %}
+  </td></tr>
+</table>
+
+<h2>Command / detail</h2>
+{% if e.detail %}<pre class="block">{{ e.detail }}</pre>{% else %}<p class="muted">(no command/path recorded for this verb)</p>{% endif %}
+
+{% if structured %}
+  {% if stdout %}<h2>stdout</h2><pre class="block">{{ stdout }}</pre>{% endif %}
+  {% if stderr %}<h2>stderr</h2><pre class="block err">{{ stderr }}</pre>{% endif %}
+{% elif raw_output %}
+  <h2>Output (raw response)</h2><pre class="block">{{ raw_output }}</pre>
+{% else %}
+  <h2>Output</h2><p class="muted">No output captured — the call didn't reach a node (denied / no tunnel / error), or the verb returns none.</p>
+{% endif %}
+
+{% if e.output_truncated %}
+<p class="muted" style="font-size:.82rem">⚠ Output was truncated at the 64&nbsp;KB audit cap — the node produced more than is retained here.</p>
+{% endif %}
+
+<style>
+  pre.block { background:var(--surface2); border:1px solid var(--line); border-radius:8px;
+    padding:.8rem 1rem; overflow-x:auto; white-space:pre-wrap; word-break:break-word;
+    font-size:.82rem; line-height:1.45; max-height:42rem; overflow-y:auto; }
+  pre.block.err { color:var(--bad); }
+  table th { text-transform:none; letter-spacing:0; font-size:.82rem; vertical-align:top; }
+</style>
+
+{% endblock %}

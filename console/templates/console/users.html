@@ -1,0 +1,35 @@
+{% extends "console/base.html" %}
+{% load humanize %}
+{% block title %} · users{% endblock %}
+{% block content %}
+
+<p><a href="{% url 'console:dashboard' %}">&larr; dashboard</a></p>
+<h2 style="margin-top:.5rem">Users — discovered Caller principals</h2>
+<p class="muted" style="font-size:.85rem;margin:.2rem 0 1rem">
+  These are the humans whose agents have authenticated into XConnect (OBO). They're
+  recorded automatically the first time they call — there is no sign-up. <strong>Being
+  here means authenticated, not authorized:</strong> a user gets nothing until an
+  operator grants them <code>readonly</code>/<code>full</code> on specific tenants.
+  {% if n_unassigned %}<br><strong>{{ n_unassigned }}</strong> awaiting assignment.{% endif %}
+</p>
+
+<table>
+  <tr><th>User</th><th>Entra oid</th><th>Access (tenant → class)</th><th>First seen</th><th>Last seen</th><th>Calls</th></tr>
+  {% for p in principals %}
+  <tr>
+    <td>{{ p.upn|default:p.display_name|default:"—" }}{% if p.display_name and p.upn %}<br><span class="muted" style="font-size:.78rem">{{ p.display_name }}</span>{% endif %}</td>
+    <td><code>{{ p.oid }}</code></td>
+    <td>
+      {% if p.grant_list %}
+        {% for g in p.grant_list %}<a href="{% url 'console:tenant' g.tenant.slug %}">{{ g.tenant.slug }}</a> <span class="pill {% if g.verb_class == 'full' %}revoked{% else %}active{% endif %}">{{ g.get_verb_class_display }}</span>{% if not forloop.last %} · {% endif %}{% endfor %}
+      {% else %}<span class="pill pending">unassigned</span>{% endif %}
+    </td>
+    <td>{{ p.first_seen|naturaltime }}</td>
+    <td>{{ p.last_seen|naturaltime }}</td>
+    <td>{{ p.seen_count|intcomma }}</td>
+  </tr>
+  {% empty %}<tr><td colspan="6" class="empty">No users discovered yet — they appear here the first time an agent connects through XConnect.</td></tr>{% endfor %}
+</table>
+<p class="muted" style="font-size:.82rem;margin-top:.6rem">Assign access on each <a href="{% url 'console:dashboard' %}">tenant's</a> page — explicitly, per tenant.</p>
+
+{% endblock %}

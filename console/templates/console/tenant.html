@@ -1,0 +1,218 @@
+{% extends "console/base.html" %}
+{% load humanize %}
+{% block title %} · {{ tenant.slug }}{% endblock %}
+{% block content %}
+
+<p><a href="{% url 'console:dashboard' %}">&larr; dashboard</a></p>
+<div style="margin-top:.5rem;display:flex;align-items:center;gap:.5rem;font-size:1.1rem;font-weight:600">
+  <span class="muted" style="font-size:.8rem;text-transform:uppercase;letter-spacing:.04em">Tenant</span>
+  <code style="font-size:.95rem">{{ tenant.slug }}</code>
+  {% if can_act %}
+  <input class="inline-edit" style="max-width:18rem;font-weight:400" data-url="{% url 'console:tenant_edit' tenant.slug %}" data-field="name" value="{{ tenant.name }}" placeholder="display name" title="Display name — editable. The slug is immutable (it's embedded in every node's SPIFFE id and the allow-list).">
+  {% else %}<span class="muted" style="font-weight:400">{{ tenant.name }}</span>{% endif %}
+</div>
+
+<h2>Nodes</h2>
+<table>
+  <tr><th>Name</th><th>Description</th><th>State</th><th>Tunnel</th><th>Version</th><th>Channel</th><th>Cert expires</th>{% if can_act %}<th></th>{% endif %}</tr>
+  {% for n in nodes %}
+  <tr>
+    <td>
+      {% if can_act and n.state == State.ACTIVE %}
+      <input class="inline-edit" data-url="{% url 'console:node_edit' tenant.slug %}" data-id="{{ n.id }}" data-field="name" value="{{ n.bound_name }}" placeholder="name">
+      {% else %}{{ n.bound_name|default:n.requested_name|default:"—" }}{% if n.state == State.PENDING %} <span class="muted" style="font-size:.72rem">requested</span>{% endif %}{% endif %}
+    </td>
+    <td>
+      {% if can_act and n.state == State.ACTIVE %}
+      <input class="inline-edit" data-url="{% url 'console:node_edit' tenant.slug %}" data-id="{{ n.id }}" data-field="description" value="{{ n.description }}" placeholder="role / intent (e.g. the database box)">
+      {% else %}{{ n.description|default:"—" }}{% endif %}
+    </td>
+    <td><span class="pill {{ n.state }}">{{ n.state }}</span></td>
+    <td>{% if n.tunnel_fresh %}<span class="dot ok"></span>up{% elif n.last_tunnel_at %}<span class="dot bad"></span>{{ n.last_tunnel_at|naturaltime }}{% else %}<span class="muted">—</span>{% endif %}</td>
+    <td>
+      {% if n.running_version %}<code>{{ n.running_version }}</code>
+        {% if n.is_behind %}<br><span class="pill pending" title="target {{ n.target_version }}">↑ {{ n.target_version }}</span>{% elif n.target_version %}<span class="dot ok" title="on target"></span>{% endif %}
+      {% else %}<span class="muted">—</span>{% endif %}
+    </td>
+    <td>
+      {% if can_act and n.state == State.ACTIVE %}
+      <form method="post" action="{% url 'console:set_channel' tenant.slug %}" style="display:flex;gap:.2rem">
+        {% csrf_token %}<input type="hidden" name="enrollment_id" value="{{ n.id }}">
+        <select name="channel" onchange="this.form.submit()" style="font:inherit;font-size:.78rem;padding:.15rem;border:1px solid var(--line);border-radius:5px">
+          {% for c in channels %}<option value="{{ c }}" {% if c == n.update_channel %}selected{% endif %}>{{ c }}</option>{% endfor %}
+        </select>
+      </form>
+      {% else %}<span class="muted">{{ n.update_channel }}</span>{% endif %}
+    </td>
+    <td>{% if n.cert_not_after %}{{ n.cert_not_after|naturaltime }}{% else %}—{% endif %}</td>
+    {% if can_act %}
+    <td>
+      {% if n.state == State.PENDING %}
+      <form method="post" action="{% url 'console:approve' tenant.slug %}" style="display:flex;gap:.3rem">
+        {% csrf_token %}<input type="hidden" name="enrollment_id" value="{{ n.id }}">
+        <input type="text" name="name" placeholder="bind name" value="{{ n.requested_name }}" size="10">
+        <input type="text" name="description" placeholder="description" value="{{ n.description }}" size="12">
+        <button class="approve">approve</button>
+      </form>
+      {% elif n.state == State.ACTIVE %}
+      <div style="display:flex;gap:.3rem">
+        {% if n.is_behind %}
+        <form method="post" action="{% url 'console:request_update' tenant.slug %}">
+          {% csrf_token %}<input type="hidden" name="enrollment_id" value="{{ n.id }}">
+          <button class="approve" title="nudge XConnect to push the channel target now">update now</button>
+        </form>
+        {% endif %}
+        <form method="post" action="{% url 'console:revoke' tenant.slug %}">
+          {% csrf_token %}<input type="hidden" name="enrollment_id" value="{{ n.id }}">
+          <button class="revoke">revoke</button>
+        </form>
+      </div>
+      {% endif %}
+    </td>
+    {% endif %}
+  </tr>
+  {% empty %}<tr><td colspan="{% if can_act %}8{% else %}7{% endif %}" class="empty">No nodes enrolled.</td></tr>{% endfor %}
+</table>
+
+<h2>Access — who can drive these nodes</h2>
+<table>
+  <tr><th>Principal</th><th>Kind</th><th>Identity</th><th>Verb class</th>{% if can_act %}<th></th>{% endif %}</tr>
+  {% for g in grants %}
+  <tr>
+    <td>{% if g.principal %}{{ g.principal.upn|default:g.principal.display_name|default:"—" }}{% else %}{{ g.subject }}{% endif %}</td>
+    <td>{{ g.subject_kind }}</td>
+    <td><code>{{ g.subject }}</code></td>
+    <td>
+      {% if can_act %}
+      <form method="post" action="{% url 'console:grant_set_class' tenant.slug %}" style="margin:0">
+        {% csrf_token %}<input type="hidden" name="grant_id" value="{{ g.id }}">
+        <select name="verb_class" onchange="this.form.submit()" title="change access level" style="font:inherit;font-size:.78rem;padding:.15rem;border:1px solid var(--line);border-radius:5px;background:var(--surface);color:var(--text)">
+          {% for val, lbl in verb_classes %}<option value="{{ val }}" {% if val == g.verb_class %}selected{% endif %}>{{ lbl }}</option>{% endfor %}
+        </select>
+      </form>
+      {% else %}<span class="pill {% if g.verb_class == 'full' %}revoked{% else %}active{% endif %}">{{ g.get_verb_class_display }}</span>{% endif %}
+    </td>
+    {% if can_act %}
+    <td>
+      <form method="post" action="{% url 'console:grant_revoke' tenant.slug %}">
+        {% csrf_token %}<input type="hidden" name="grant_id" value="{{ g.id }}">
+        <button class="revoke">remove</button>
+      </form>
+    </td>
+    {% endif %}
+  </tr>
+  {% empty %}<tr><td colspan="{% if can_act %}5{% else %}4{% endif %}" class="empty">No one is granted access to this tenant yet — default-deny.</td></tr>{% endfor %}
+</table>
+{% if can_act %}
+<form method="post" action="{% url 'console:grant_add' tenant.slug %}" style="display:flex;gap:.4rem;margin-top:.6rem;align-items:center;flex-wrap:wrap">
+  {% csrf_token %}
+  <span class="muted" style="font-size:.82rem">Grant a discovered user:</span>
+  <select name="principal_id" required style="font:inherit;font-size:.82rem;padding:.25rem;border:1px solid var(--line);border-radius:6px">
+    <option value="" disabled selected>— pick a user —</option>
+    {% for p in assignable %}<option value="{{ p.id }}">{{ p.upn|default:p.display_name|default:p.oid }}</option>{% endfor %}
+  </select>
+  <select name="verb_class" style="font:inherit;font-size:.82rem;padding:.25rem;border:1px solid var(--line);border-radius:6px">
+    {% for val, label in verb_classes %}<option value="{{ val }}">{{ label }}</option>{% endfor %}
+  </select>
+  <button class="approve">grant</button>
+  {% if not assignable %}<span class="empty">No unassigned users yet — they appear here once their agent first connects (see <a href="{% url 'console:users' %}">Users</a>).</span>{% endif %}
+</form>
+{% endif %}
+
+<h2>Join tokens — deploy new nodes
+  {% if show_all_tokens %}
+    <a href="{% url 'console:tenant' tenant.slug %}#tokens" style="font-size:.72rem;font-weight:400">hide inactive</a>
+  {% elif hidden_tokens %}
+    <a href="{% url 'console:tenant' tenant.slug %}?show_tokens=all#tokens" style="font-size:.72rem;font-weight:400">show all ({{ hidden_tokens }} inactive hidden)</a>
+  {% endif %}
+</h2>
+<a id="tokens"></a>
+{% if minted %}
+<div class="msg success" style="display:block">
+  <strong>New join token — copy it now, it won't be shown again:</strong>
+  <pre class="block" style="margin:.5rem 0">{{ minted.raw }}</pre>
+  <div class="muted" style="font-size:.82rem">tenant <code>{{ minted.tenant }}</code> · expires {{ minted.expires }} · {{ minted.uses }} use(s){% if minted.label %} · {{ minted.label }}{% endif %}</div>
+  <div style="margin-top:.5rem;font-size:.82rem">Install on the new node:</div>
+  <pre class="block" style="margin:.3rem 0">curl -fsS {{ bootstrap_url|default:"https://&lt;your-xconnect-host&gt;" }}/bootstrap/install.sh | RCON_JOIN_TOKEN={{ minted.raw }} sh</pre>
+  <div class="muted" style="font-size:.82rem">TLS is verified (no <code>-k</code>). For a self-signed origin, add the CA pin so enrollment can't be MITM'd:</div>
+  <pre class="block" style="margin:.3rem 0">curl -fsS {{ bootstrap_url|default:"https://&lt;your-xconnect-host&gt;" }}/bootstrap/install.sh | RCON_JOIN_TOKEN={{ minted.raw }} RCON_CA_PIN={{ ca_pin }} sh</pre>
+  <div class="muted" style="font-size:.82rem">CA pin: <code>{{ ca_pin }}</code></div>
+</div>
+{% endif %}
+<table>
+  <tr><th>Label</th><th>Status</th><th>Uses</th><th>Expires</th><th>Created</th>{% if can_act %}<th></th>{% endif %}</tr>
+  {% for t in tokens %}
+  <tr>
+    <td>{{ t.label|default:"—" }}</td>
+    <td><span class="pill {% if t.status == 'active' %}active{% elif t.status == 'revoked' %}revoked{% else %}pending{% endif %}">{{ t.status }}</span></td>
+    <td>{{ t.uses }}/{{ t.max_uses }}</td>
+    <td>{{ t.expires_at|date:'Y-m-d H:i' }}</td>
+    <td>{{ t.created_at|date:'Y-m-d H:i' }}{% if t.created_by %} · {{ t.created_by }}{% endif %}</td>
+    {% if can_act %}<td>{% if t.status == 'active' %}
+      <form method="post" action="{% url 'console:revoke_join_token' tenant.slug %}" style="margin:0">
+        {% csrf_token %}<input type="hidden" name="token_id" value="{{ t.id }}">
+        <button class="revoke" onclick="return confirm('Revoke this join token?')">revoke</button>
+      </form>{% endif %}</td>{% endif %}
+  </tr>
+  {% empty %}<tr><td colspan="{% if can_act %}6{% else %}5{% endif %}" class="empty">{% if hidden_tokens %}No active join tokens — {{ hidden_tokens }} inactive (use "show all" above).{% else %}No join tokens yet — mint one to enroll a node.{% endif %}</td></tr>{% endfor %}
+</table>
+{% if can_act %}
+<form method="post" action="{% url 'console:mint_join_token' tenant.slug %}" style="display:flex;gap:.4rem;margin-top:.6rem;align-items:center;flex-wrap:wrap">
+  {% csrf_token %}
+  <span class="muted" style="font-size:.82rem">Mint a join token:</span>
+  <input type="text" name="label" placeholder="label (e.g. 'new gpu box')" style="font-size:.82rem">
+  <input type="text" name="ttl_minutes" value="{{ default_ttl }}" style="width:5rem" title="TTL minutes">
+  <span class="muted" style="font-size:.78rem">min TTL</span>
+  <input type="text" name="uses" value="1" style="width:3.5rem" title="max uses">
+  <span class="muted" style="font-size:.78rem">uses</span>
+  <button class="approve">mint</button>
+</form>
+{% endif %}
+
+<h2>System identities</h2>
+<table>
+  <tr><th>Role</th><th>SPIFFE id</th><th>State</th><th>Last seen</th></tr>
+  {% for i in idents %}
+  <tr>
+    <td>{{ i.role }}</td>
+    <td><code>{{ i.spiffe_id }}</code></td>
+    <td>{% if i.is_active %}<span class="pill active">enabled</span>{% else %}<span class="pill revoked">revoked</span>{% endif %}</td>
+    <td>{% if i.last_seen %}<span class="dot {% if i.is_fresh %}ok{% else %}bad{% endif %}"></span>{{ i.last_seen|naturaltime }}{% else %}<span class="muted">never</span>{% endif %}</td>
+  </tr>
+  {% empty %}<tr><td colspan="4" class="empty">None.</td></tr>{% endfor %}
+</table>
+
+<script>
+// Click-to-edit, auto-save on blur/Enter (no per-row save buttons). Reverts the
+// field on failure. CSRF token is rendered into the page (works regardless of the
+// CSRF cookie's HttpOnly setting).
+(function () {
+  var CSRF = "{{ csrf_token }}";
+  function flash(el, ok) {
+    el.style.transition = "outline-color .15s";
+    el.style.outline = "2px solid " + (ok ? "var(--ok)" : "var(--bad)");
+    setTimeout(function () { el.style.outline = ""; }, 900);
+  }
+  document.querySelectorAll(".inline-edit").forEach(function (inp) {
+    var saved = inp.value;
+    function commit() {
+      var v = inp.value;
+      if (v === saved) return;
+      var body = new URLSearchParams({ field: inp.dataset.field, value: v });
+      if (inp.dataset.id) body.set("enrollment_id", inp.dataset.id);
+      fetch(inp.dataset.url, {
+        method: "POST",
+        headers: { "X-CSRFToken": CSRF, "Content-Type": "application/x-www-form-urlencoded" },
+        body: body,
+      })
+        .then(function (r) { return r.json().then(function (j) { return r.ok && j.ok; }); })
+        .then(function (ok) { if (ok) { saved = v; flash(inp, true); } else { inp.value = saved; flash(inp, false); } })
+        .catch(function () { inp.value = saved; flash(inp, false); });
+    }
+    inp.addEventListener("blur", commit);
+    inp.addEventListener("keydown", function (e) { if (e.key === "Enter") { e.preventDefault(); inp.blur(); } });
+  });
+})();
+</script>
+
+{% endblock %}

@@ -1,0 +1,59 @@
+[Unit]
+Description=Orthanc — Pow3rtool control plane (Django web/console + SSO)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# Dedicated unprivileged user — NOT root. Binds only loopback:8099 (nginx fronts
+# it on 443), so NO capabilities are needed. One-time setup:
+#   useradd --system --no-create-home --shell /usr/sbin/nologin orthanc
+#   # orthanc must READ: the project, .env, ca/pki (pre-initialised), entra/*.pem
+#   chown -R orthanc:orthanc /nfs/pow3rtool/Orthanc/ca/pki /nfs/pow3rtool/Orthanc/entra
+#   sudo -u orthanc venv/bin/python manage.py init_ca && ... migrate && ... collectstatic
+User=orthanc
+Group=orthanc
+WorkingDirectory=/nfs/pow3rtool/Orthanc
+# Config is read from BASE_DIR/.env by django-environ (no EnvironmentFile needed).
+ExecStart=/nfs/pow3rtool/Orthanc/venv/bin/gunicorn orthanc.wsgi:application \
+    --bind 127.0.0.1:8099 --workers 3 --timeout 120 --access-logfile - --error-logfile -
+Restart=on-failure
+RestartSec=5s
+
+# --- least privilege: no ports <1024, no caps -------------------------------
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+UMask=0077
+
+# --- sandbox ---------------------------------------------------------------
+# Whole FS read-only (the app writes nothing at runtime — sessions live in
+# Postgres; the CA is pre-initialised so ensure_ca() is a no-op; signing stores
+# the leaf in the DB, not on disk). collectstatic + init_ca are deploy-time steps.
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectProc=invisible
+ProcSubset=pid
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+# Postgres + Entra/JWKS over TCP; AF_UNIX for gunicorn master<->worker IPC.
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+MemoryMax=2G
+TasksMax=256
+LimitCORE=0
+
+[Install]
+WantedBy=multi-user.target

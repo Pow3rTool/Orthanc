@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Access denied — Orthanc</title>
+  <style>
+    body{background:#0f1115;color:#cdd3de;font:15px/1.55 system-ui,-apple-system,sans-serif;
+         display:flex;min-height:100vh;align-items:center;justify-content:center;margin:0}
+    .card{max-width:580px;padding:2rem 2.4rem;background:#171a21;border:1px solid #262b36;border-radius:10px}
+    h1{font-size:1.3rem;margin:0 0 .7rem;color:#fff}
+    code{background:#0d0f13;padding:.12rem .42rem;border-radius:4px;color:#9ecbff;font-size:.92em}
+    p{margin:.55rem 0}.muted{color:#7c8595;font-size:.9rem}
+    a{color:#9ecbff;text-decoration:none}a:hover{text-decoration:underline}
+  </style>
+</head>
+<body>
+  <div class="card">
+  {% if operator and operator.upn %}
+    <h1>Signed in — but not authorized</h1>
+    <p>You're signed in as <code>{{ operator.upn }}</code>, but your account has no Orthanc
+       role{% if detail %} ({{ detail }}){% endif %}, so this page is off-limits.</p>
+    <p>An admin can grant you a tier:</p>
+    <p><code>manage.py grant_operator {{ operator.upn }} --tier viewer|approver|admin</code></p>
+    <p class="muted">…or assign your user the <code>orthanc.admin</code> app role in Entra
+       (the higher of the two wins). <code>viewer</code> sees the dashboard;
+       <code>approver</code> can approve/revoke nodes.</p>
+    <p class="muted" style="margin-top:1.2rem"><a href="/oidc/logout">Sign out</a> ·
+       <a href="/oidc/me">whoami</a></p>
+  {% else %}
+    <h1>Sign-in required</h1>
+    <p>You need to sign in to reach the Orthanc console.</p>
+    <p style="margin-top:1rem"><a href="/oidc/login">Sign in →</a></p>
+  {% endif %}
+  </div>
+</body>
+</html>

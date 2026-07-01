@@ -1,0 +1,67 @@
+{% extends "console/base.html" %}
+{% load humanize %}
+{% block title %} · agents{% endblock %}
+{% block content %}
+
+<p><a href="{% url 'console:dashboard' %}">&larr; dashboard</a></p>
+<h2 style="margin-top:.5rem">Agents — the harnesses calling the fabric</h2>
+<p class="muted" style="font-size:.85rem;margin:.2rem 0 1rem">
+  Each row is an OAuth client app (the OBO <code>azp</code>) that calls on a user's
+  behalf — i.e. <strong>which harness</strong> ran a command (e.g. Turnstone-MCP).
+  A harness is recorded <strong>pending</strong> the first time it calls and the
+  <strong>agent jail denies its calls</strong> until you approve it here — the same
+  approve flow as a new node. Approving + naming makes the Witchhunt read in plain
+  language. You gate which harness may act; never the trusted admin behind it.
+  {% if n_pending %}<br><strong style="color:var(--warn)">{{ n_pending }}</strong> pending approval.{% endif %}
+</p>
+
+<table>
+  <tr><th>State</th><th>Name</th><th>App GUID (azp)</th><th>Description</th><th>Last seen</th>{% if operator.tier == 'approver' or operator.tier == 'admin' %}<th>Approve / name</th><th></th>{% endif %}</tr>
+  {% for a in apps %}
+  <tr>
+    <td>
+      {% if a.state == 'approved' %}<span class="pill active">approved</span>
+      {% elif a.state == 'denied' %}<span class="pill revoked">denied</span>
+      {% else %}<span class="pill pending">pending</span>{% endif %}
+    </td>
+    <td>{% if a.named %}<strong>{{ a.name }}</strong>{% else %}<span class="muted">(unnamed)</span>{% endif %}</td>
+    <td><code>{{ a.app_id }}</code></td>
+    <td>{{ a.description|default:"—" }}</td>
+    <td>{{ a.last_seen|naturaltime }}</td>
+    {% if operator.tier == 'approver' or operator.tier == 'admin' %}
+    <td>
+      {% if a.state != 'approved' %}
+      <form method="post" action="{% url 'console:agent_set_state' %}" style="display:flex;gap:.3rem;align-items:center">
+        {% csrf_token %}
+        <input type="hidden" name="app_id" value="{{ a.app_id }}">
+        <input type="hidden" name="state" value="approved">
+        <input type="text" name="name" value="{% if a.named %}{{ a.name }}{% endif %}" placeholder="name (optional)" style="width:9rem">
+        <button type="submit">✓ approve</button>
+      </form>
+      {% else %}
+      <form method="post" action="{% url 'console:agent_edit' %}" style="display:flex;gap:.3rem;flex-wrap:wrap;align-items:center">
+        {% csrf_token %}
+        <input type="hidden" name="app_id" value="{{ a.app_id }}">
+        <input type="text" name="name" value="{% if a.named %}{{ a.name }}{% endif %}" placeholder="friendly name" style="width:9rem">
+        <input type="text" name="description" value="{{ a.description }}" placeholder="description" style="width:10rem">
+        <button type="submit">save</button>
+      </form>
+      {% endif %}
+    </td>
+    <td>
+      <form method="post" action="{% url 'console:agent_set_state' %}" onsubmit="return confirm('{% if a.state == 'denied' %}Re-pend{% else %}Deny{% endif %} this agent? Its calls will be blocked.');">
+        {% csrf_token %}
+        <input type="hidden" name="app_id" value="{{ a.app_id }}">
+        {% if a.state == 'denied' %}
+          <input type="hidden" name="state" value="pending"><button type="submit">↩ un-deny</button>
+        {% else %}
+          <input type="hidden" name="state" value="denied"><button type="submit">⛔ deny</button>
+        {% endif %}
+      </form>
+    </td>
+    {% endif %}
+  </tr>
+  {% empty %}<tr><td colspan="7" class="empty">No agents seen yet — they appear here (pending) the first time a harness calls through XConnect.</td></tr>{% endfor %}
+</table>
+
+{% endblock %}

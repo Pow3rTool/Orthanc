@@ -1,0 +1,240 @@
+{% extends "console/base.html" %}
+{% load humanize %}
+{% block title %} · witchhunt{% endblock %}
+{% block content %}
+
+<p><a href="{% url 'console:dashboard' %}">&larr; dashboard</a></p>
+<h2 style="margin-top:.5rem">Witchhunt — who did what, where, via which agent</h2>
+<p class="muted" style="font-size:.85rem;margin-top:-.3rem">
+  One row per audited fabric call — the OBO principal, the agent (harness) that
+  acted for them, the verb, the target node, the perimeter decision, and the
+  outcome. Written by XConnect over the control link. Denials are kept.
+</p>
+
+<div class="modebar">
+  <a class="modebtn {% if mode == 'live' %}on{% endif %}" href="?{% if filter_qs %}{{ filter_qs }}&{% endif %}mode=live"><span class="livedot"></span>Live</a>
+  <a class="modebtn {% if mode == 'search' %}on{% endif %}" href="?{% if filter_qs %}{{ filter_qs }}&{% endif %}mode=search">🔍 Search history</a>
+</div>
+
+<form method="get" class="filterbar">
+  <input type="hidden" name="mode" value="{{ mode }}">
+  <select name="tenant">
+    <option value="">all tenants</option>
+    {% for t in tenants %}<option value="{{ t.slug }}" {% if f.tenant == t.slug %}selected{% endif %}>{{ t.slug }}</option>{% endfor %}
+  </select>
+  <input type="text" name="principal" placeholder="principal (upn / oid)" value="{{ f.principal }}">
+  <input type="text" name="agent" placeholder="agent (harness / guid)" value="{{ f.agent }}">
+  <input type="text" name="node" placeholder="node (name / svid)" value="{{ f.node }}">
+  <select name="verb">
+    <option value="">any verb</option>
+    {% for v in verbs %}<option value="{{ v }}" {% if f.verb == v %}selected{% endif %}>{{ v }}</option>{% endfor %}
+  </select>
+  <select name="result">
+    <option value="">any result</option>
+    <option value="allowed" {% if f.result == 'allowed' %}selected{% endif %}>allowed</option>
+    <option value="denied" {% if f.result == 'denied' %}selected{% endif %}>denied</option>
+  </select>
+  <input type="text" name="q" placeholder="command contains… (e.g. wget, asdf.com)" value="{{ f.q }}" style="min-width:14rem">
+  {% if mode == 'search' %}<input type="text" name="limit" value="{{ limit }}" style="width:4rem" title="rows per page">{% endif %}
+  <button type="submit">apply</button>
+  <a href="?mode={{ mode }}" style="font-size:.82rem">reset</a>
+</form>
+
+{% if mode == 'live' %}
+{# ───────────────────────── LIVE MODE ───────────────────────── #}
+<div style="display:flex;gap:.8rem;align-items:center;margin-bottom:.6rem;font-size:.85rem">
+  <button type="button" id="pauseBtn">⏸ pause</button>
+  <span class="muted" id="statusline">connecting…</span>
+</div>
+
+<h3 class="runhdr">⏳ Executing now <span class="muted" id="runcount"></span></h3>
+<table id="runtable">
+  <tr><th style="width:6rem">Started</th><th>Principal</th><th>Agent</th><th style="width:5rem">Verb</th><th>Target</th><th style="width:7rem">Elapsed</th><th>Command / detail</th></tr>
+  <tbody id="running">
+    <tr id="runempty"><td colspan="7" class="empty">Nothing executing right now (matching the filter).</td></tr>
+  </tbody>
+</table>
+
+<h3 class="runhdr" style="margin-top:1.2rem">✓ Completed</h3>
+<table>
+  <tr><th style="width:6rem">When</th><th>Principal</th><th>Agent</th><th style="width:5rem">Verb</th><th>Target</th><th style="width:7rem">Result</th><th style="width:6rem">Outcome</th><th style="width:6rem">Duration</th><th>Command / detail</th></tr>
+  <tbody id="stream">
+    <tr id="emptyrow"><td colspan="9" class="empty">Waiting for calls matching the filter…</td></tr>
+  </tbody>
+</table>
+
+<p class="muted" style="font-size:.8rem;margin-top:.6rem">
+  Polls every 1.5s; events land in ~0.4s so this is effectively live. Click a completed row to drill into its output. Keeps the last 300 in view — use <a href="?{% if filter_qs %}{{ filter_qs }}&{% endif %}mode=search">Search history</a> to page back or search commands.
+</p>
+
+<div id="cfg" data-tail="{% url 'console:witchhunt_tail' %}" data-qs="{{ filter_qs }}"></div>
+
+<script>
+(function () {
+  var cfg = document.getElementById('cfg');
+  var TAIL = cfg.dataset.tail, QS = cfg.dataset.qs || '';
+  var stream = document.getElementById('stream');
+  var running = document.getElementById('running');
+  var runcount = document.getElementById('runcount');
+  var dot = document.getElementById('livedot') || document.querySelector('.livedot');
+  var statusline = document.getElementById('statusline');
+  var pauseBtn = document.getElementById('pauseBtn');
+  var cursor = 0, paused = false, MAXROWS = 300, polls = 0, skew = 0, lastInflight = [];
+
+  function esc(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+  function fmtDur(ms) {
+    if (ms == null || ms === '') return '—';
+    ms = Number(ms); if (isNaN(ms)) return '—';
+    if (ms < 1000) return ms + ' ms';
+    var s = ms / 1000; return (s < 10 ? s.toFixed(1) : Math.round(s)) + ' s';
+  }
+  function fmtElapsed(sec) {
+    if (sec < 0) sec = 0;
+    if (sec < 60) return sec.toFixed(sec < 10 ? 1 : 0) + 's';
+    var m = Math.floor(sec / 60); return m + 'm ' + Math.round(sec % 60) + 's';
+  }
+  function rowHtml(e) {
+    var result = e.allowed
+      ? '<span class="pill active">allow</span>'
+      : '<span class="pill revoked">deny</span>' + (e.reason ? ' <span class="muted" style="font-size:.72rem">' + esc(e.reason) + '</span>' : '');
+    var outcome = (e.status === 'ok')
+      ? '<span class="dot ok"></span>ok' + (e.rc ? ' <span class="muted" style="font-size:.72rem">rc ' + esc(e.rc) + '</span>' : '')
+      : '<span class="pill pending">' + esc(e.status || '—') + '</span>';
+    return '<tr class="flash' + (e.allowed ? '' : ' deny') + '">' +
+      '<td style="white-space:nowrap"><a href="' + esc(e.url) + '"><code style="background:transparent;padding:0">' + esc(e.ts) + '</code></a></td>' +
+      '<td title="' + esc(e.upn_full) + '">' + esc(e.upn) + '</td>' +
+      '<td>' + esc(e.agent || '—') + '</td>' +
+      '<td><code>' + esc(e.verb) + '</code></td>' +
+      '<td>' + esc(e.target) + '</td>' +
+      '<td>' + result + '</td>' +
+      '<td>' + outcome + '</td>' +
+      '<td style="white-space:nowrap">' + fmtDur(e.dur_ms) + '</td>' +
+      '<td><code class="cmd">' + esc(e.detail) + '</code></td></tr>';
+  }
+  function prepend(events) {
+    if (!events.length) return;
+    var empty = document.getElementById('emptyrow'); if (empty) empty.remove();
+    for (var i = events.length - 1; i >= 0; i--) stream.insertAdjacentHTML('afterbegin', rowHtml(events[i]));
+    while (stream.rows.length > MAXROWS) stream.deleteRow(stream.rows.length - 1);
+  }
+  function renderRunning(list) {
+    lastInflight = list || [];
+    runcount.textContent = lastInflight.length ? '(' + lastInflight.length + ')' : '';
+    if (!lastInflight.length) { running.innerHTML = '<tr id="runempty"><td colspan="7" class="empty">Nothing executing right now (matching the filter).</td></tr>'; return; }
+    var html = '';
+    for (var i = 0; i < lastInflight.length; i++) {
+      var r = lastInflight[i];
+      html += '<tr data-start="' + Date.parse(r.started_iso) + '">' +
+        '<td style="white-space:nowrap"><span class="spin"></span><code style="background:transparent;padding:0">' + esc(r.ts) + '</code></td>' +
+        '<td title="' + esc(r.upn_full) + '">' + esc(r.upn) + '</td>' +
+        '<td>' + esc(r.agent || '—') + '</td>' +
+        '<td><code>' + esc(r.verb) + '</code></td>' +
+        '<td>' + esc(r.target) + '</td>' +
+        '<td class="elapsed" style="white-space:nowrap">…</td>' +
+        '<td><code class="cmd">' + esc(r.detail) + '</code></td></tr>';
+    }
+    running.innerHTML = html; tickElapsed();
+  }
+  function tickElapsed() {
+    var serverNow = Date.now() + skew, rows = running.querySelectorAll('tr[data-start]');
+    for (var i = 0; i < rows.length; i++) {
+      var sec = (serverNow - Number(rows[i].getAttribute('data-start'))) / 1000;
+      var cell = rows[i].querySelector('.elapsed');
+      if (cell) cell.textContent = 'running ' + fmtElapsed(sec);
+      rows[i].classList.toggle('stale', sec > 1800);
+    }
+  }
+  function poll() {
+    if (paused) return;
+    fetch(TAIL + '?' + (QS ? QS + '&' : '') + 'after=' + cursor, {headers: {'X-Requested-With': 'fetch'}})
+      .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+      .then(function (d) {
+        if (d.max_id > cursor) cursor = d.max_id;
+        prepend(d.events);
+        if (d.now) skew = Date.parse(d.now) - Date.now();
+        renderRunning(d.inflight); polls++;
+        statusline.textContent = 'live · last poll ' + new Date().toLocaleTimeString() + ' · ' + lastInflight.length + ' running · +' + d.events.length + ' done';
+      })
+      .catch(function (e) { statusline.textContent = 'poll error: ' + e.message + ' (retrying)'; });
+  }
+  pauseBtn.addEventListener('click', function () {
+    paused = !paused;
+    pauseBtn.textContent = paused ? '▶ resume' : '⏸ pause';
+    if (dot) dot.classList.toggle('paused', paused);
+    statusline.textContent = paused ? 'paused' : 'resuming…';
+    if (!paused) poll();
+  });
+  poll(); setInterval(poll, 1500); setInterval(tickElapsed, 1000);
+})();
+</script>
+
+<style>
+  .livedot { display:inline-block; width:.6rem; height:.6rem; border-radius:50%; background:var(--ok); margin-right:.4rem; vertical-align:middle; animation:pulse 1.4s ease-in-out infinite; }
+  .livedot.paused { background:var(--muted); animation:none; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.2} }
+  #stream td, #running td, #runtable td { vertical-align:top; }
+  #stream td .cmd, #running td .cmd { display:block; font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace; font-size:.78rem; line-height:1.45; white-space:pre-wrap; word-break:break-word; background:var(--surface2); border:1px solid var(--line); border-radius:6px; padding:.4rem .55rem; max-height:18rem; overflow:auto; }
+  tr.flash { animation:flash 1.1s ease-out; } @keyframes flash { from{background:var(--ok-bg)} to{background:transparent} }
+  tr.flash.deny { animation:flashd 1.1s ease-out; } @keyframes flashd { from{background:var(--bad-bg)} to{background:transparent} }
+  #running tr { background:var(--warn-bg); } #running tr.stale { background:var(--surface2); color:var(--muted); }
+  .spin { display:inline-block; width:.62rem; height:.62rem; margin-right:.4rem; vertical-align:middle; border:2px solid var(--warn); border-right-color:transparent; border-radius:50%; animation:spin .8s linear infinite; }
+  tr.stale .spin { border-color:var(--muted); border-right-color:transparent; animation:none; }
+  @keyframes spin { to { transform:rotate(360deg); } }
+</style>
+
+{% else %}
+{# ───────────────────────── SEARCH / HISTORY MODE ───────────────────────── #}
+<p class="muted" style="font-size:.82rem;display:flex;gap:.6rem;align-items:center;flex-wrap:wrap">
+  <span>Page <strong>{{ page_obj.number }}</strong> of <strong>{{ page_obj.paginator.num_pages }}</strong> · <strong>{{ total }}</strong> matching event(s){% if denied_shown %} · <span class="pill revoked">{{ denied_shown }} denied</span> on page{% endif %}.</span>
+</p>
+
+<table>
+  <tr><th style="width:11rem">When (UTC)</th><th>Principal</th><th>Agent</th><th style="width:5rem">Verb</th><th>Target</th><th style="width:8rem">Result</th><th style="width:7rem">Outcome</th><th style="width:6rem">Duration</th><th>Command / detail</th></tr>
+  {% for e in events %}
+  <tr>
+    <td><a href="{% url 'console:witchhunt_detail' e.id %}" title="{{ e.occurred_at|naturaltime }}" style="white-space:nowrap"><code style="background:transparent;padding:0">{{ e.occurred_at|date:'Y-m-d H:i:s' }}</code></a></td>
+    <td title="{{ e.principal_upn }} · oid {{ e.principal_oid }}">{{ e.principal_label }}</td>
+    <td title="{{ e.principal_app }}">{{ e.agent_disp|default:"—" }}</td>
+    <td><code>{{ e.verb }}</code></td>
+    <td title="{{ e.target_svid }}">{{ e.node_label }}</td>
+    <td>{% if e.allowed %}<span class="pill active">allow</span>{% else %}<span class="pill revoked">deny</span>{% endif %}
+        {% if e.reason and not e.allowed %}<span class="muted" style="font-size:.75rem">{{ e.reason }}</span>{% endif %}</td>
+    <td>{% if e.status == 'ok' %}<span class="dot ok"></span>ok{% if e.rc %} <span class="muted" style="font-size:.75rem">rc {{ e.rc }}</span>{% endif %}{% else %}<span class="pill pending">{{ e.status|default:"—" }}</span>{% endif %}</td>
+    <td style="white-space:nowrap">{% if e.duration_ms %}{{ e.duration_ms }} ms{% else %}—{% endif %}</td>
+    <td><code class="cmd">{{ e.detail|default:"—" }}</code></td>
+  </tr>
+  {% empty %}<tr><td colspan="9" class="empty">No call events match — either nothing's been called yet, or the filters are too narrow.</td></tr>{% endfor %}
+</table>
+<div style="display:flex;gap:.5rem;align-items:center;margin-top:.8rem;font-size:.85rem">
+  {% if page_obj.has_previous %}
+    <a href="?{% if filter_qs %}{{ filter_qs }}&{% endif %}mode=search&page=1">&laquo; first</a>
+    <a href="?{% if filter_qs %}{{ filter_qs }}&{% endif %}mode=search&page={{ page_obj.previous_page_number }}">&lsaquo; prev</a>
+  {% else %}<span class="muted">&laquo; first</span><span class="muted">&lsaquo; prev</span>{% endif %}
+  <span class="muted">page {{ page_obj.number }} / {{ page_obj.paginator.num_pages }}</span>
+  {% if page_obj.has_next %}
+    <a href="?{% if filter_qs %}{{ filter_qs }}&{% endif %}mode=search&page={{ page_obj.next_page_number }}">next &rsaquo;</a>
+    <a href="?{% if filter_qs %}{{ filter_qs }}&{% endif %}mode=search&page={{ page_obj.paginator.num_pages }}">last &raquo;</a>
+  {% else %}<span class="muted">next &rsaquo;</span><span class="muted">last &raquo;</span>{% endif %}
+</div>
+<p class="muted" style="font-size:.8rem;margin-top:.6rem">
+  Retention is out-of-band: <code>manage.py prune_call_events --days 90</code>. Running-row backstop: <code>manage.py sweep_inflight</code>.
+</p>
+
+<style>
+  td { vertical-align:top; }
+  td .cmd { display:block; font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace; font-size:.78rem; line-height:1.45; white-space:pre-wrap; word-break:break-word; background:var(--surface2); border:1px solid var(--line); border-radius:6px; padding:.4rem .55rem; max-height:18rem; overflow:auto; }
+</style>
+{% endif %}
+
+<style>
+  .modebar { display:flex; gap:.4rem; margin:.6rem 0; }
+  .modebtn { padding:.35rem .8rem; border:1px solid var(--line); border-radius:6px; font-size:.85rem; color:var(--text); background:var(--surface); }
+  .modebtn.on { background:var(--surface2); font-weight:600; border-color:var(--accent); }
+  .modebtn .livedot { width:.55rem; height:.55rem; }
+  .filterbar { display:flex; gap:.5rem; flex-wrap:wrap; align-items:center; margin:.4rem 0 1rem; }
+</style>
+
+{% endblock %}
