@@ -1,0 +1,59 @@
+{% extends "console/base.html" %}
+{% load humanize %}
+{% block content %}
+
+<div class="cards">
+  <div class="card"><div class="n">{{ totals.tenants }}</div><div class="l">tenants</div></div>
+  <div class="card"><div class="n">{{ totals.active }}</div><div class="l">active nodes</div></div>
+  <div class="card"><div class="n">{{ totals.connected }}</div><div class="l">nodes connected</div></div>
+  <div class="card"><div class="n">{{ totals.pending }}</div><div class="l">pending approval</div></div>
+  <div class="card"><div class="n">{{ totals.xconnects_live }}</div><div class="l">XConnects live</div></div>
+</div>
+
+<h2>Data plane — XConnect links</h2>
+<table>
+  <tr><th>Tenant</th><th>SPIFFE id</th><th>State</th><th>Last seen</th></tr>
+  {% for x in xconnects %}
+  <tr>
+    <td>{% if x.tenant %}<a href="{% url 'console:tenant' x.tenant.slug %}">{{ x.tenant.slug }}</a>{% else %}<span class="muted">(tower)</span>{% endif %}</td>
+    <td><code>{{ x.spiffe_id }}</code></td>
+    <td>{% if x.is_active %}<span class="pill active">enabled</span>{% else %}<span class="pill revoked">revoked</span>{% endif %}</td>
+    <td>
+      {% if x.last_seen %}<span class="dot {% if x.is_fresh %}ok{% else %}bad{% endif %}"></span>{{ x.last_seen|naturaltime }}
+      {% else %}<span class="muted">never connected</span>{% endif %}
+    </td>
+  </tr>
+  {% empty %}
+  <tr><td colspan="4" class="empty">No XConnects provisioned yet.</td></tr>
+  {% endfor %}
+</table>
+<p class="muted" style="font-size:.78rem">Green = contacted the control link within {{ fresh_seconds }}s.</p>
+
+<h2>Fleet by tenant</h2>
+<table>
+  <tr><th>Tenant</th><th>Active</th><th>Connected</th><th>Pending</th><th>Revoked</th><th>XConnects</th></tr>
+  {% for t in tenants %}
+  <tr>
+    <td><a href="{% url 'console:tenant' t.slug %}">{{ t.slug }}</a> <span class="muted">{{ t.name }}</span></td>
+    <td>{{ t.n_active }}</td><td>{{ t.n_connected }}</td><td>{{ t.n_pending }}</td><td>{{ t.n_revoked }}</td><td>{{ t.n_xconnect }}</td>
+  </tr>
+  {% empty %}<tr><td colspan="6" class="empty">No tenants yet.</td></tr>{% endfor %}
+</table>
+
+{% if pending %}
+<h2>Pending approvals</h2>
+<table>
+  <tr><th>Tenant</th><th>Requested name</th><th>Fingerprint</th><th>Since</th><th></th></tr>
+  {% for e in pending %}
+  <tr>
+    <td>{{ e.tenant.slug }}</td>
+    <td>{{ e.requested_name|default:"—" }}</td>
+    <td><code>{{ e.spki_fingerprint|slice:":16" }}</code></td>
+    <td>{{ e.created_at|naturaltime }}</td>
+    <td><a href="{% url 'console:tenant' e.tenant.slug %}">review &rarr;</a></td>
+  </tr>
+  {% endfor %}
+</table>
+{% endif %}
+
+{% endblock %}

@@ -1,0 +1,105 @@
+{% load humanize %}
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Orthanc{% block title %}{% endblock %}</title>
+  <script>
+    // Set the theme BEFORE first paint (no flash). Explicit choice wins; else OS pref.
+    (function () {
+      var t = localStorage.getItem('orthanc-theme');
+      if (!t) t = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+      document.documentElement.setAttribute('data-theme', t);
+    })();
+  </script>
+  <style>
+    :root {
+      --line:#e4e4e7; --muted:#71717a; --bg:#fafafa; --surface:#fff; --surface2:#f4f4f5;
+      --text:#18181b; --header:#18181b; --header-text:#fff; --header-dim:#a1a1aa; --tier-bg:#3f3f46;
+      --ok:#16a34a; --warn:#d97706; --bad:#dc2626; --accent:#0a58ca; --dot-dim:#a1a1aa;
+      --ok-bg:#f0fdf4; --ok-bd:#bbf7d0; --warn-bg:#fffbeb; --warn-bd:#fed7aa; --bad-bg:#fef2f2; --bad-bd:#fecaca;
+      --msg-ok-bg:#f0fdf4; --msg-ok-fg:#166534; --msg-bad-bg:#fef2f2; --msg-bad-fg:#991b1b;
+    }
+    :root[data-theme="dark"] {
+      --line:#2a2a31; --muted:#9ca3af; --bg:#0e0e11; --surface:#17171b; --surface2:#202027;
+      --text:#e4e4e7; --header:#000; --header-text:#fafafa; --header-dim:#71717a; --tier-bg:#27272e;
+      --ok:#22c55e; --warn:#f59e0b; --bad:#f87171; --accent:#60a5fa; --dot-dim:#52525b;
+      --ok-bg:#0e2417; --ok-bd:#14532d; --warn-bg:#231a0c; --warn-bd:#78350f; --bad-bg:#2a1316; --bad-bd:#7f1d1d;
+      --msg-ok-bg:#0e2417; --msg-ok-fg:#86efac; --msg-bad-bg:#2a1316; --msg-bad-fg:#fca5a5;
+    }
+    * { box-sizing:border-box; }
+    body { font-family:system-ui,-apple-system,sans-serif; margin:0; color:var(--text); background:var(--bg); }
+    header { background:var(--header); color:var(--header-text); padding:.8rem 1.5rem; display:flex; align-items:center; gap:1rem; }
+    header h1 { font-size:1.1rem; margin:0; font-weight:600; }
+    header h1 a { color:var(--header-text); }
+    header .who { margin-left:auto; font-size:.85rem; color:var(--header-dim); }
+    header a { color:#93c5fd; text-decoration:none; }
+    #themeToggle { cursor:pointer; font-size:1rem; line-height:1; user-select:none; }
+    .tier { background:var(--tier-bg); border-radius:4px; padding:.1rem .45rem; font-size:.75rem; }
+    main { width:96vw; max-width:120rem; margin:1.5rem auto; padding:0 1.5rem; }
+    h2 { font-size:1rem; text-transform:uppercase; letter-spacing:.04em; color:var(--muted); margin:2rem 0 .6rem; }
+    .cards { display:flex; gap:1rem; flex-wrap:wrap; }
+    .card { background:var(--surface); border:1px solid var(--line); border-radius:8px; padding:.9rem 1.1rem; min-width:8rem; }
+    .card .n { font-size:1.6rem; font-weight:700; } .card .l { color:var(--muted); font-size:.8rem; }
+    table { width:100%; border-collapse:collapse; background:var(--surface); border:1px solid var(--line); border-radius:8px; overflow:hidden; }
+    th,td { text-align:left; padding:.55rem .8rem; border-bottom:1px solid var(--line); font-size:.88rem; }
+    th { background:var(--surface2); color:var(--muted); font-weight:600; font-size:.78rem; text-transform:uppercase; letter-spacing:.03em; }
+    tr:last-child td { border-bottom:none; }
+    code { background:var(--surface2); padding:.05rem .3rem; border-radius:4px; font-size:.82em; }
+    a { color:var(--accent); }
+    .dot { display:inline-block; width:.55rem; height:.55rem; border-radius:50%; margin-right:.35rem; vertical-align:middle; }
+    .dot.ok{background:var(--ok)} .dot.bad{background:var(--dot-dim)}
+    .pill { font-size:.72rem; padding:.1rem .45rem; border-radius:999px; border:1px solid var(--line); }
+    .pill.active{color:var(--ok);border-color:var(--ok-bd);background:var(--ok-bg)}
+    .pill.pending{color:var(--warn);border-color:var(--warn-bd);background:var(--warn-bg)}
+    .pill.revoked{color:var(--bad);border-color:var(--bad-bd);background:var(--bad-bg)}
+    .msg { padding:.6rem 1rem; border-radius:6px; margin:.4rem 0; font-size:.88rem; }
+    .msg.success{background:var(--msg-ok-bg);color:var(--msg-ok-fg)} .msg.error{background:var(--msg-bad-bg);color:var(--msg-bad-fg)}
+    button { font:inherit; font-size:.82rem; padding:.3rem .7rem; border:1px solid var(--line); border-radius:6px; background:var(--surface); color:var(--text); cursor:pointer; }
+    button.approve{border-color:var(--ok);color:var(--ok)} button.revoke{border-color:var(--bad);color:var(--bad)}
+    .muted{color:var(--muted)} .empty{color:var(--muted);font-size:.88rem;padding:.5rem 0;}
+    input[type=text],select { font:inherit; font-size:.82rem; padding:.25rem .4rem; border:1px solid var(--line); border-radius:6px; background:var(--surface); color:var(--text); }
+    /* click-to-edit: looks like text until hovered/focused; saves on blur/Enter */
+    .inline-edit { font:inherit; font-size:.88rem; padding:.2rem .4rem; border:1px solid transparent; border-radius:5px; background:transparent; color:var(--text); width:100%; max-width:22rem; }
+    .inline-edit:hover { border-color:var(--line); }
+    .inline-edit:focus { border-color:var(--accent); background:var(--surface); outline:none; }
+    .inline-edit::placeholder { color:var(--muted); }
+  </style>
+</head>
+<body>
+  <header>
+    <h1><a href="{% url 'console:dashboard' %}">Orthanc</a></h1>
+    <span class="muted" style="color:var(--header-dim);font-size:.8rem">control plane</span>
+    <a href="{% url 'console:dashboard' %}" style="font-size:.85rem">fleet</a>
+    <a href="{% url 'console:users' %}" style="font-size:.85rem">users</a>
+    <a href="{% url 'console:agents' %}" style="font-size:.85rem">agents</a>
+    <a href="{% url 'console:releases' %}" style="font-size:.85rem">releases</a>
+    <a href="{% url 'console:witchhunt' %}" style="font-size:.85rem">witchhunt</a>
+    <span class="who">
+      <span id="themeToggle" title="toggle light/dark" role="button" tabindex="0">🌙</span>
+      {{ operator.name|default:operator.upn }}
+      <span class="tier">{{ operator.tier|default:"no tier" }}</span>
+      · <a href="/oidc/logout">sign out</a>
+    </span>
+  </header>
+  <main>
+    {% for m in messages %}<div class="msg {{ m.tags }}">{{ m }}</div>{% endfor %}
+    {% block content %}{% endblock %}
+  </main>
+  <script>
+    (function () {
+      var btn = document.getElementById('themeToggle');
+      var sync = function () { btn.textContent = document.documentElement.getAttribute('data-theme') === 'dark' ? '☀️' : '🌙'; };
+      var toggle = function () {
+        var d = document.documentElement;
+        var n = d.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+        d.setAttribute('data-theme', n); localStorage.setItem('orthanc-theme', n); sync();
+      };
+      btn.addEventListener('click', toggle);
+      btn.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); } });
+      sync();
+    })();
+  </script>
+</body>
+</html>

@@ -1,0 +1,53 @@
+[Unit]
+Description=Orthanc control listener — XConnect-only mTLS control link (8443)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# Same unprivileged user as the web unit. Binds 8443 (non-privileged) — no caps.
+# This is the mTLS control plane XConnect dials up to; it terminates the client
+# cert ITSELF (nginx can't, it would strip the cert). FIREWALL 8443 to XConnect
+# source IPs only (ufw allow from <xconnect-ip> to any port 8443).
+User=orthanc
+Group=orthanc
+WorkingDirectory=/nfs/pow3rtool/Orthanc
+# Bind 0.0.0.0 so XConnect on another host can reach it; UFW restricts the source.
+ExecStart=/nfs/pow3rtool/Orthanc/venv/bin/python manage.py run_control --bind 0.0.0.0 --port 8443
+Restart=on-failure
+RestartSec=5s
+
+# --- least privilege --------------------------------------------------------
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+UMask=0077
+
+# --- sandbox ---------------------------------------------------------------
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectProc=invisible
+ProcSubset=pid
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+# Postgres + Entra JWKS (OBO token re-validation) over TCP.
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+MemoryMax=1G
+TasksMax=256
+LimitCORE=0
+
+[Install]
+WantedBy=multi-user.target

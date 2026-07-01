@@ -1,0 +1,40 @@
+{% extends "console/base.html" %}
+{% load humanize %}
+{% block title %} · releases{% endblock %}
+{% block content %}
+
+<p><a href="{% url 'console:dashboard' %}">&larr; dashboard</a></p>
+<h2 style="margin-top:.5rem">Channel targets — what each cohort converges to</h2>
+<table>
+  <tr><th>Channel</th><th>OS/Arch</th><th>Target version</th><th>Set</th></tr>
+  {% for t in targets %}
+  <tr>
+    <td><span class="pill {% if t.channel == 'stable' %}active{% else %}pending{% endif %}">{{ t.channel }}</span></td>
+    <td><code>{{ t.goos }}/{{ t.goarch }}</code></td>
+    <td><code>{{ t.release.version }}</code></td>
+    <td>{{ t.updated_at|naturaltime }}{% if t.updated_by %} · {{ t.updated_by }}{% endif %}</td>
+  </tr>
+  {% empty %}<tr><td colspan="4" class="empty">No channel targets set — nodes won't self-update until a channel is promoted to a release.</td></tr>{% endfor %}
+</table>
+
+<h2>Published releases (signed)</h2>
+<table>
+  <tr><th>Version</th><th>OS/Arch</th><th>Size</th><th>SHA-256</th><th>Notes</th><th>Published</th></tr>
+  {% for r in releases %}
+  <tr>
+    <td><code>{{ r.version }}</code></td>
+    <td><code>{{ r.goos }}/{{ r.goarch }}</code></td>
+    <td>{{ r.size|filesizeformat }}</td>
+    <td><code title="{{ r.sha256 }}">{{ r.sha256|slice:":12" }}…</code> {% if r.signature %}<span class="dot ok" title="Ed25519-signed"></span>{% endif %}</td>
+    <td>{{ r.notes|default:"—" }}</td>
+    <td>{{ r.published_at|naturaltime }}{% if r.published_by %} · {{ r.published_by }}{% endif %}</td>
+  </tr>
+  {% empty %}<tr><td colspan="6" class="empty">No releases published.</td></tr>{% endfor %}
+</table>
+<p class="muted" style="font-size:.82rem;margin-top:.6rem">
+  Publish + promote from the control plane: <code>manage.py publish_release &lt;ver&gt; --binary … --arch …</code>
+  then <code>manage.py promote_release &lt;channel&gt; &lt;ver&gt; --arch …</code>. Assign a node's channel and
+  push "update now" from its tenant page.
+</p>
+
+{% endblock %}

@@ -1,0 +1,18 @@
+hosts.json
+*.bak
+*.bak.*
+__pycache__/
+*.pyc
+venv/
+.env
+*.pem
+*.key
+id_*
+
+# CA key material
+ca/pki/
+
+# Django collectstatic output (build artifact) + local DBs
+staticfiles/
+*.sqlite3
+*.db
