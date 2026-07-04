@@ -1,0 +1,21 @@
+# Secrets / CA / keys — NEVER baked (mounted at runtime instead)
+.env
+*.env
+!.env.example
+ca/pki
+entra
+sso/**/*.pem
+sso/**/*.key
+*.pem
+*.key
+# Collected static is regenerated / mounted; venv + vcs + caches not needed
+staticfiles
+venv
+.venv
+.git
+.gitignore
+__pycache__
+*.pyc
+deploy
+scripts
+*.md
