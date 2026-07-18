@@ -17,6 +17,7 @@ from functools import wraps
 
 from django.conf import settings
 from django.core.exceptions import PermissionDenied
+from django.http import JsonResponse
 from django.shortcuts import redirect
 
 TIER_RANK = {"viewer": 1, "approver": 2, "admin": 3}
@@ -73,6 +74,34 @@ def require_tier(required: str):
                 return redirect(f"{settings.LOGIN_URL}?next={request.path}")
             if not has_tier(operator, required):
                 raise PermissionDenied(f"requires '{required}' tier")
+            return view(request, *args, **kwargs)
+        return wrapped
+    return decorator
+
+
+def require_tier_api(required: str):
+    """Like require_tier, but for XHR/JSON endpoints (e.g. the witchhunt tail
+    feed): return 401/403 JSON instead of a 302 to the login page.
+
+    A 302-to-login on a background poller is actively harmful, not just ugly:
+    the browser's fetch follows it into /oidc/login, which stashes a fresh
+    auth-code flow in the session on EVERY poll. That clobbers the flow of a
+    real interactive login happening in another tab, so its callback fails
+    MSAL's state check and 500s. Returning JSON keeps pollers off the
+    interactive login path entirely."""
+    def decorator(view):
+        @wraps(view)
+        def wrapped(request, *args, **kwargs):
+            operator = request.session.get(SESSION_KEY)
+            if not operator:
+                return JsonResponse(
+                    {"error": "authentication_required",
+                     "login_url": settings.LOGIN_URL},
+                    status=401)
+            if not has_tier(operator, required):
+                return JsonResponse(
+                    {"error": "insufficient_tier", "required": required},
+                    status=403)
             return view(request, *args, **kwargs)
         return wrapped
     return decorator

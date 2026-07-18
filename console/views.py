@@ -24,7 +24,7 @@ from enrollment.models import (
     AgentApp, CallEvent, ChannelTarget, Enrollment, Grant, InFlightCall,
     JoinToken, Principal, Release, SystemIdentity, Tenant,
 )
-from sso.roles import SESSION_KEY, has_tier, require_tier
+from sso.roles import SESSION_KEY, has_tier, require_tier, require_tier_api
 
 # Cohorts an operator can assign from the console (free-form in the DB, but these
 # are the ones we offer in the UI).
@@ -381,7 +381,7 @@ def witchhunt_live(request):
     return redirect(f"{reverse('console:witchhunt')}?{params.urlencode()}")
 
 
-@require_tier("viewer")
+@require_tier_api("viewer")
 def witchhunt_tail(request):
     """JSON cursor feed for the live tail. Returns events newer than ?after=<id>
     (or the most recent batch when absent), matching the same filters, newest

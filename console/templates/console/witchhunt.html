@@ -150,8 +150,19 @@
   function poll() {
     if (paused) return;
     fetch(TAIL + '?' + (QS ? QS + '&' : '') + 'after=' + cursor, {headers: {'X-Requested-With': 'fetch'}})
-      .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+      .then(function (r) {
+        // Session gone: send the whole page to login (a top-level nav, so the
+        // login flow won't be clobbered by more polls). tail.json returns 401
+        // JSON for XHR rather than a 302 into /oidc/login — see require_tier_api.
+        if (r.status === 401) {
+          location.href = '/oidc/login?next=' + encodeURIComponent(location.pathname + location.search);
+          return null;
+        }
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        return r.json();
+      })
       .then(function (d) {
+        if (!d) return;  // 401 handled above; page is navigating to login
         if (d.max_id > cursor) cursor = d.max_id;
         prepend(d.events);
         if (d.now) skew = Date.parse(d.now) - Date.now();
