@@ -1,9 +1,14 @@
-{% load humanize %}
+{% load humanize static %}
 <!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="apple-touch-icon" sizes="180x180" href="{% static 'console/favicons/apple-touch-icon.png' %}?v=20260801-2">
+  <link rel="icon" type="image/png" sizes="32x32" href="{% static 'console/favicons/favicon-32x32.png' %}?v=20260801-2">
+  <link rel="icon" type="image/png" sizes="16x16" href="{% static 'console/favicons/favicon-16x16.png' %}?v=20260801-2">
+  <link rel="icon" href="{% static 'console/favicons/favicon.ico' %}?v=20260801-2" sizes="any">
+  <link rel="manifest" href="{% static 'console/favicons/site.webmanifest' %}?v=20260801-2">
   <title>Orthanc{% block title %}{% endblock %}</title>
   <script>
     // Set the theme BEFORE first paint (no flash). Explicit choice wins; else OS pref.
