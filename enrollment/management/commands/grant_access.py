@@ -8,7 +8,7 @@ class Command(BaseCommand):
 
     def add_arguments(self, parser):
         parser.add_argument("tenant", help="tenant slug")
-        parser.add_argument("subject", help="principal UPN (e.g. you@contoso.onmicrosoft.com) or group name")
+        parser.add_argument("subject", help="principal UPN (e.g. operator@example.test) or group name")
         parser.add_argument("--kind", default=Grant.Kind.USER, choices=[k.value for k in Grant.Kind])
         parser.add_argument("--verb-class", default=Grant.VerbClass.READONLY,
                             choices=[v.value for v in Grant.VerbClass])

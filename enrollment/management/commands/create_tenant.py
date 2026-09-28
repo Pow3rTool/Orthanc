@@ -8,7 +8,7 @@ class Command(BaseCommand):
     help = "Create a fleet tenant (the <tenant> in the SPIFFE id and registration URL)."
 
     def add_arguments(self, parser):
-        parser.add_argument("slug", help="lowercase slug, e.g. '3lab'")
+        parser.add_argument("slug", help="lowercase slug, e.g. 'example'")
         parser.add_argument("--name", default="", help="human-friendly display name")
 
     def handle(self, *args, **opts):

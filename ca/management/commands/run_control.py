@@ -38,6 +38,25 @@ _SERVER_KEY = "control-server-key.pem"
 _SERVER_CERT = "control-server-cert.pem"
 
 
+def _runtime_report_fields(report: dict, now) -> dict:
+    """Additive runtime metadata: absent fields from old brokers stay untouched."""
+    fields = {
+        "running_version": str(report.get("version", ""))[:40],
+        "running_goarch": str(report.get("goarch", ""))[:20],
+        "last_report_at": now,
+    }
+    for source, field, size in (
+        ("goos", "running_goos", 20),
+        ("shell", "running_shell", 32),
+        ("os_version", "running_os_version", 120),
+    ):
+        if report.get(source):
+            fields[field] = str(report[source])[:size]
+    if isinstance(report.get("self_update_supported"), bool):
+        fields["self_update_supported"] = report["self_update_supported"]
+    return fields
+
+
 def _node_id_from_svid(svid: str) -> str:
     """node UUID = last path segment of spiffe://…/node/<uuid>."""
     svid = svid or ""
@@ -375,9 +394,7 @@ class Handler(BaseHTTPRequestHandler):
                 if not nodeid or not x.get("version"):
                     continue
                 Enrollment.objects.filter(tenant=caller.tenant, id=nodeid).update(
-                    running_version=str(x.get("version", ""))[:40],
-                    running_goarch=str(x.get("goarch", ""))[:20],
-                    last_report_at=now)
+                    **_runtime_report_fields(x, now))
             # Persist any audit/call events in this batch (the Witchhunt log) +
             # update the 'running' set. HARD-SCOPED to the reporting XConnect's
             # tenant. The instance_id drives the restart-corrective: clear any

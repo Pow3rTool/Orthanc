@@ -34,8 +34,8 @@ Working:
   `sign` (enroll/renew relay).
 - **Authorization (the perimeter):** `Grant` model — `subject → verb_class`,
   **default-deny**, verb-class hierarchy. Evaluated per call via the control link
-  for OBO principals. Proven: `metaclassing@…` got `run` on `3lab` and a real
-  command landed on a node, attributed to the human.
+  for OBO principals. Commands are authorized for the caller’s tenant and
+  attributed to the human principal.
 - **Operator SSO** (Entra, cert credential) + a **live console**: XConnect/node
   liveness (green/grey freshness), fleet-by-tenant, approve/revoke. (The "Board"
   liveness slice; full per-call event log is next.)
@@ -54,16 +54,16 @@ python3 -m venv venv && ./venv/bin/pip install -r requirements.txt
 # DB creds live in .env (gitignored), pointing at db.example.com
 ./venv/bin/python manage.py migrate
 ./venv/bin/python manage.py init_ca                       # dev root + intermediate -> ca/pki/
-./venv/bin/python manage.py create_tenant 3lab --name "3lab fleet"
-./venv/bin/python manage.py mint_join_token 3lab    # prints the raw token ONCE
+./venv/bin/python manage.py create_tenant example --name "example fleet"
+./venv/bin/python manage.py mint_join_token example    # prints the raw token ONCE
 ./venv/bin/python manage.py runserver 127.0.0.1:8099
 ```
 Drive enrollment with the stand-in agent (real client is `RCON/reference`):
 ```bash
-./venv/bin/python scripts/enroll_client.py --tenant 3lab register --token pjt_... --name lab-01
+./venv/bin/python scripts/enroll_client.py --tenant example register --token pjt_... --name lab-01
 ./venv/bin/python manage.py list_enrollments --state pending
 ./venv/bin/python manage.py approve_enrollment <fingerprint-prefix> --name lab-01   # approve by KEY, never hostname
-./venv/bin/python scripts/enroll_client.py --tenant 3lab poll                 # -> ACTIVE, cert verified
+./venv/bin/python scripts/enroll_client.py --tenant example poll                 # -> ACTIVE, cert verified
 ```
 Operator CLI: `create_tenant`, `mint_join_token`, `list_enrollments`,
 `approve_enrollment`, `revoke_enrollment`, `init_ca`. Operators:

@@ -8,7 +8,7 @@ class Command(BaseCommand):
             "admin before anyone has logged in via SSO.")
 
     def add_arguments(self, parser):
-        parser.add_argument("upn", help="operator UPN / email (e.g. you@contoso.onmicrosoft.com)")
+        parser.add_argument("upn", help="operator UPN / email (e.g. operator@example.test)")
         parser.add_argument("--tier", default=Operator.Tier.VIEWER,
                             choices=[t.value for t in Operator.Tier])
         parser.add_argument("--name", default="", help="display name (optional)")

@@ -166,6 +166,10 @@ class Enrollment(models.Model):
     # version is NOT exposed on the agent/MCP surface.
     running_version = models.CharField(max_length=40, blank=True)
     running_goarch = models.CharField(max_length=20, blank=True)
+    running_goos = models.CharField(max_length=20, blank=True)
+    running_shell = models.CharField(max_length=32, blank=True)
+    running_os_version = models.CharField(max_length=120, blank=True)
+    self_update_supported = models.BooleanField(null=True, blank=True)
     last_report_at = models.DateTimeField(null=True, blank=True)
     # Operator-requested one-shot update nudge. Orthanc can't dial down to XConnect
     # (control link is XConnect-initiated), so this is a PULL: XConnect picks it up
@@ -193,12 +197,11 @@ class Enrollment(models.Model):
         return f"spiffe://{settings.SPIFFE_TRUST_DOMAIN}/{self.tenant.slug}/node/{self.node_id}"
 
     def target_version(self) -> str | None:
-        """The version this node's channel currently targets (for its arch), or
-        None if the arch is unknown or no target is set for that channel/arch."""
-        if not self.running_goarch:
+        """Target for this node's OS/architecture; unknown OS fails closed."""
+        if not self.running_goos or not self.running_goarch:
             return None
         ct = (ChannelTarget.objects
-              .filter(channel=self.update_channel, goos="linux", goarch=self.running_goarch)
+              .filter(channel=self.update_channel, goos=self.running_goos, goarch=self.running_goarch)
               .select_related("release").first())
         return ct.release.version if ct else None
 

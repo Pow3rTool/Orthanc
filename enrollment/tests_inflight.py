@@ -38,7 +38,7 @@ class InFlightIngestTests(TestCase):
 
     def _start(self, rid, **kw):
         e = {"phase": "start", "rid": rid, "ts": _iso(self.now),
-             "upn": "alice@acme.com", "oid": "oid-a", "verb": "run",
+             "upn": "alice@example.test", "oid": "oid-a", "verb": "run",
              "app": "agent-guid-1", "app_name": "Ops Agent",
              "node": "web1", "svid": "spiffe://pow3rtool/acme/node/n1",
              "detail": "sleep 5"}
@@ -46,7 +46,7 @@ class InFlightIngestTests(TestCase):
         return e
 
     def _end(self, rid, **kw):
-        e = {"rid": rid, "ts": _iso(self.now), "upn": "alice@acme.com",
+        e = {"rid": rid, "ts": _iso(self.now), "upn": "alice@example.test",
              "oid": "oid-a", "verb": "run", "app": "agent-guid-1",
              "app_name": "Ops Agent", "node": "web1",
              "svid": "spiffe://pow3rtool/acme/node/n1", "allowed": True,
@@ -107,7 +107,7 @@ class InFlightIngestTests(TestCase):
 
     def test_legacy_terminal_without_rid_still_audited(self):
         # an XConnect that predates this feature ships no phase/rid
-        legacy = {"ts": _iso(self.now), "upn": "bob@acme.com", "verb": "read",
+        legacy = {"ts": _iso(self.now), "upn": "bob@example.test", "verb": "read",
                   "node": "db1", "allowed": True, "status": "ok"}
         counts = self.h._persist_calls(self.xc, [legacy], self.now, "")
         self.assertEqual(counts["stored"], 1)
@@ -131,7 +131,7 @@ class InFlightCorrectiveTests(TestCase):
     def _running(self, rid, xc, instance_id, started_at=None):
         return InFlightCall.objects.create(
             tenant=self.tenant, request_id=rid, system_identity=xc,
-            instance_id=instance_id, principal_upn="alice@acme.com",
+            instance_id=instance_id, principal_upn="alice@example.test",
             verb="run", target="web1", detail="sleep 9999",
             started_at=started_at or self.now)
 
@@ -188,12 +188,12 @@ class WitchhuntTailFeedTests(TestCase):
         svid = f"spiffe://pow3rtool/acme/node/{node.id}"
         InFlightCall.objects.create(
             tenant=self.tenant, request_id="r1", instance_id="inst-1",
-            principal_upn="alice@acme.com", principal_app="agent-guid-1",
+            principal_upn="alice@example.test", principal_app="agent-guid-1",
             principal_app_name="Ops Agent", verb="run", target=str(node.id),
             target_svid=svid, detail="sleep 5", started_at=self.now)
         CallEvent.objects.create(
             tenant=self.tenant, request_id="r2", occurred_at=self.now,
-            principal_upn="bob@acme.com", principal_app="agent-guid-2",
+            principal_upn="bob@example.test", principal_app="agent-guid-2",
             principal_app_name="Deploy Bot", verb="run", target=str(node.id),
             target_svid=svid, allowed=True, status="ok", rc=0,
             duration_ms=4200, detail="uptime")
@@ -215,7 +215,7 @@ class WitchhuntTailFeedTests(TestCase):
     def test_tail_result_denied_filter_hides_running(self):
         InFlightCall.objects.create(
             tenant=self.tenant, request_id="r1", instance_id="inst-1",
-            principal_upn="alice@acme.com", verb="run", target="web1",
+            principal_upn="alice@example.test", verb="run", target="web1",
             started_at=self.now)
         resp = self.client.get(reverse("console:witchhunt_tail"),
                                {"result": "denied"}, secure=True)
@@ -225,7 +225,7 @@ class WitchhuntTailFeedTests(TestCase):
         AgentApp.objects.create(app_id="agent-guid-9", name="Turnstone-MCP")
         CallEvent.objects.create(
             tenant=self.tenant, request_id="r9", occurred_at=self.now,
-            principal_upn="bob@acme.com", principal_app="agent-guid-9",
+            principal_upn="bob@example.test", principal_app="agent-guid-9",
             principal_app_name="raw token name", verb="run", target="db1",
             allowed=True, status="ok", rc=0, duration_ms=10, detail="uptime")
         data = self.client.get(reverse("console:witchhunt_tail"), secure=True).json()
@@ -264,7 +264,7 @@ class AgentAppRegistryTests(TestCase):
             role="xconnect", tenant=self.tenant,
             spiffe_id="spiffe://pow3rtool/acme/system/xconnect/1",
             spki_fingerprint="a" * 64, is_active=True)
-        ev = {"rid": "r1", "ts": self.now.isoformat(), "upn": "a@acme.com",
+        ev = {"rid": "r1", "ts": self.now.isoformat(), "upn": "a@example.test",
               "app": "discovered-guid", "verb": "run", "node": "web1",
               "allowed": True, "status": "ok"}
         self.h._persist_calls(xc, [ev], self.now, "inst-1")
@@ -304,7 +304,7 @@ class WitchhuntFilterSearchTests(TestCase):
 
     def _event(self, rid, **kw):
         d = dict(tenant=self.tenant, request_id=rid, occurred_at=self.now,
-                 principal_upn="a@acme.com", verb="run", allowed=True, status="ok")
+                 principal_upn="a@example.test", verb="run", allowed=True, status="ok")
         d.update(kw)
         return CallEvent.objects.create(**d)
 
@@ -312,7 +312,7 @@ class WitchhuntFilterSearchTests(TestCase):
         return self.client.get(reverse("console:witchhunt_tail"), params, secure=True).json()
 
     def test_command_search_matches_detail(self):
-        self._event("r1", detail="wget http://asdf.com/payload")
+        self._event("r1", detail="wget https://example.test/payload")
         self._event("r2", detail="ls -la /tmp")
         d = self._tail(q="wget")
         rids = [e["url"] for e in d["events"]]
@@ -354,7 +354,7 @@ class WitchhuntPageTests(TestCase):
     def setUp(self):
         self.tenant = Tenant.objects.create(slug="acme", name="Acme")
         session = self.client.session
-        session[SESSION_KEY] = {"tier": "viewer", "name": "t", "upn": "t@acme.com"}
+        session[SESSION_KEY] = {"tier": "viewer", "name": "t", "upn": "t@example.test"}
         session.save()
 
     def test_default_is_live_mode(self):
@@ -366,7 +366,7 @@ class WitchhuntPageTests(TestCase):
     def test_search_mode_paginates(self):
         CallEvent.objects.create(
             tenant=self.tenant, occurred_at=timezone.now(),
-            principal_upn="a@acme.com", verb="run", allowed=True, status="ok",
+            principal_upn="a@example.test", verb="run", allowed=True, status="ok",
             detail="uptime")
         resp = self.client.get(reverse("console:witchhunt"),
                                {"mode": "search"}, secure=True)
@@ -385,7 +385,7 @@ class AgentJailTests(TestCase):
 
     def _authz(self, app, verb="run", oid="oid-a"):
         return authorize(tenant=self.tenant, principal_oid=oid,
-                         principal_upn="a@acme.com", principal_app=app, verb=verb)
+                         principal_upn="a@example.test", principal_app=app, verb=verb)
 
     def test_empty_azp_denied_failclosed(self):
         d = self._authz("")
@@ -422,7 +422,7 @@ class AgentJailTests(TestCase):
     def test_approved_agent_with_grant_allowed(self):
         AgentApp.objects.create(app_id="ok-guid", name="OK",
                                 state=AgentApp.State.APPROVED)
-        p = Principal.objects.create(oid="oid-a", tid="t", upn="a@acme.com")
+        p = Principal.objects.create(oid="oid-a", tid="t", upn="a@example.test")
         Grant.objects.create(tenant=self.tenant, subject_kind=Grant.Kind.USER,
                              subject="oid-a", principal=p,
                              verb_class=Grant.VerbClass.FULL, is_active=True)

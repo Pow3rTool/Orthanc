@@ -11,9 +11,9 @@ Type=simple
 # source IPs only (ufw allow from <xconnect-ip> to any port 8443).
 User=orthanc
 Group=orthanc
-WorkingDirectory=/nfs/pow3rtool/Orthanc
+WorkingDirectory=/opt/orthanc
 # Bind 0.0.0.0 so XConnect on another host can reach it; UFW restricts the source.
-ExecStart=/nfs/pow3rtool/Orthanc/venv/bin/python manage.py run_control --bind 0.0.0.0 --port 8443
+ExecStart=/opt/orthanc/venv/bin/python manage.py run_control --bind 0.0.0.0 --port 8443
 Restart=on-failure
 RestartSec=5s
 

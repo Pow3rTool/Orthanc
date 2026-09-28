@@ -9,13 +9,13 @@ Type=simple
 # it on 443), so NO capabilities are needed. One-time setup:
 #   useradd --system --no-create-home --shell /usr/sbin/nologin orthanc
 #   # orthanc must READ: the project, .env, ca/pki (pre-initialised), entra/*.pem
-#   chown -R orthanc:orthanc /nfs/pow3rtool/Orthanc/ca/pki /nfs/pow3rtool/Orthanc/entra
+#   chown -R orthanc:orthanc /opt/orthanc/ca/pki /opt/orthanc/entra
 #   sudo -u orthanc venv/bin/python manage.py init_ca && ... migrate && ... collectstatic
 User=orthanc
 Group=orthanc
-WorkingDirectory=/nfs/pow3rtool/Orthanc
+WorkingDirectory=/opt/orthanc
 # Config is read from BASE_DIR/.env by django-environ (no EnvironmentFile needed).
-ExecStart=/nfs/pow3rtool/Orthanc/venv/bin/gunicorn orthanc.wsgi:application \
+ExecStart=/opt/orthanc/venv/bin/gunicorn orthanc.wsgi:application \
     --bind 127.0.0.1:8099 --workers 3 --timeout 120 --access-logfile - --error-logfile -
 Restart=on-failure
 RestartSec=5s
